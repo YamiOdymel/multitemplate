@@ -1,7 +1,11 @@
 package multitemplate
 
 import (
+	"context"
+	"fmt"
 	"html/template"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -216,4 +220,68 @@ func TestAddFromFSFuncsDynamic(t *testing.T) {
 	w := performRequest(router)
 	assert.Equal(t, 200, w.Code)
 	assert.Equal(t, "<p>Test Multiple Template</p>\nHi, this is article template\n", w.Body.String())
+}
+
+func createFromPartialFilesDynamic() Renderer {
+	r := NewRenderer()
+	r.AddFromFiles("partials", "tests/partial-base.html", "tests/partials.html")
+	return r
+}
+
+func TestPartialRenderingDynamic(t *testing.T) {
+	router := gin.New()
+	router.HTMLRender = createFromPartialFilesDynamic()
+	
+	// Test rendering just the header partial
+	router.GET("/header", func(c *gin.Context) {
+		c.HTML(200, "partials#header", gin.H{
+			"name": "TestUser",
+		})
+	})
+	
+	// Test rendering just the content partial  
+	router.GET("/content", func(c *gin.Context) {
+		c.HTML(200, "partials#content", gin.H{
+			"name": "TestUser",
+		})
+	})
+
+	// Test header partial
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/header", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "<header>Welcome TestUser</header>", w.Body.String())
+
+	// Test content partial
+	req, _ = http.NewRequestWithContext(context.Background(), "GET", "/content", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "<p>This is the main content for TestUser</p>", w.Body.String())
+}
+
+func TestPartialEdgeCasesDynamic(t *testing.T) {
+	router := gin.New()
+	router.HTMLRender = createFromPartialFilesDynamic()
+	
+	// Test non-existent template
+	router.GET("/notfound", func(c *gin.Context) {
+		c.HTML(200, "notfound#header", gin.H{
+			"name": "TestUser",
+		})
+	})
+	
+	// This should panic as expected
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/notfound", nil)
+	w := httptest.NewRecorder()
+	
+	// Use a defer recover to catch the panic
+	defer func() {
+		if r := recover(); r != nil {
+			assert.Contains(t, fmt.Sprintf("%v", r), "Dynamic template with name notfound not found")
+		}
+	}()
+	
+	router.ServeHTTP(w, req)
 }

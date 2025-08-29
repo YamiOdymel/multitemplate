@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin/render"
 )
@@ -180,10 +182,52 @@ func (r Render) AddFromFilesFuncsWithOptions(
 	return tmpl
 }
 
+// parseTemplateName parses a template name that may contain a partial reference
+// in the format "template#partial" and returns the template name and partial name
+func parseTemplateName(name string) (templateName, partialName string) {
+	if idx := strings.Index(name, "#"); idx > 0 {
+		return name[:idx], name[idx+1:]
+	}
+	return name, ""
+}
+
+// PartialHTML implements render.Render interface for partial template rendering
+type PartialHTML struct {
+	Template   *template.Template
+	PartialName string
+	Data       interface{}
+}
+
+func (r PartialHTML) Render(w http.ResponseWriter) error {
+	r.WriteContentType(w)
+	if len(r.PartialName) > 0 {
+		return r.Template.ExecuteTemplate(w, r.PartialName, r.Data)
+	}
+	return r.Template.Execute(w, r.Data)
+}
+
+func (r PartialHTML) WriteContentType(w http.ResponseWriter) {
+	header := w.Header()
+	if val := header["Content-Type"]; len(val) == 0 {
+		header["Content-Type"] = []string{"text/html; charset=utf-8"}
+	}
+}
+
 // Instance supply render string
 func (r Render) Instance(name string, data interface{}) render.Render {
+	templateName, partialName := parseTemplateName(name)
+	tmpl := r[templateName]
+	
+	if len(partialName) > 0 {
+		return PartialHTML{
+			Template:   tmpl,
+			PartialName: partialName,
+			Data:       data,
+		}
+	}
+	
 	return render.HTML{
-		Template: r[name],
+		Template: tmpl,
 		Data:     data,
 	}
 }
