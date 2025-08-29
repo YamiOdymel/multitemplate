@@ -25,3 +25,6 @@ _testmain.go
 vendor/*
 !vendor/vendor.json
 coverage.out
+
+# Demo binaries
+example/partial-demo/partial-demo
